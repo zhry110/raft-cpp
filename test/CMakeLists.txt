@@ -1,0 +1,6 @@
+add_compile_definitions(TEST_MODE)
+set(CMAKE_CXX_STANDARD 17)
+include_directories(../third-party/googletest/googletest/include ../third-party/googletest/googlemock/include ../third-party/spdlog/include ../raft)
+add_subdirectory(../third-party/googletest test)
+add_executable(Raft-test RaftBasicTest.cpp)
+target_link_libraries(Raft-test gtest_main)
