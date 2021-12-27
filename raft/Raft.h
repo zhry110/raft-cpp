@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/event.h>
 #include <spdlog/spdlog.h>
+#include <log/Log.h>
 #include "node/Node.h"
 #include "message/Message.h"
 using term = size_t;
@@ -38,11 +39,13 @@ class Raft {
   std::mutex term_lock;
   MessageSender *channel{};
 
+  Log log;
+
 #ifdef TEST_MODE
- public:
-  size_t follower_call_count{0};
-  size_t candidate_call_count{0};
-  size_t election_count{0};
+  public:
+   size_t follower_call_count{0};
+   size_t candidate_call_count{0};
+   size_t election_count{0};
 #endif
 
   volatile bool stop_ = false;
@@ -78,6 +81,13 @@ class Raft {
   }
   bool already_voted(Node *node) {
     return voted_for_ != nullptr && voted_for_ != node;
+  }
+  bool log_old_than_me(term log_term, size_t log_index) {
+    auto entry = log.last_log_entry();
+    if (entry == nullptr) return false;
+    if (log_term < entry->log_term) return true;
+    if (log_term == entry->log_term) return log_index < entry->log_index;
+    return false;
   }
 
   void follower() {
@@ -146,11 +156,11 @@ class Raft {
   void vote_for(Node *node, Message *msg) {
     std::unique_lock<std::mutex> lock(term_lock);
     auto header = (RequestVoteMessageHeader *) msg->header;
-    if (header->t < current_term || already_voted(node)) {
-      return;
-    } else if (header->t > current_term) {
+    if (header->t > current_term) {
       newer_term(header->t);
-      role_condition.notify_one();
+    } else if (header->t < current_term || already_voted(node)
+        || log_old_than_me(header->log_term, header->log_index)) {
+      return;
     }
     voted_for_ = node;
     lock.unlock();

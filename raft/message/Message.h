@@ -42,6 +42,7 @@ struct AuthMessageHeader : public MessageHeader {
 
 struct RequestVoteMessageHeader : public MessageHeader {
   size_t log_index;
+  term log_term;
   RequestVoteMessageHeader(term t, size_t log_index) : MessageHeader(REQUEST_VOTE, t),
                                                        log_index(log_index) {};
 };

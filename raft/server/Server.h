@@ -299,10 +299,12 @@ class Server {
       }
     });
     keepalive = std::make_unique<std::thread>([&]() -> void {
-      std::this_thread::sleep_for(std::chrono::seconds(2));
-      for (auto node: nodes) {
-        if (node.second == nullptr && node.first->name() > host.name()) {
-          connect_node(node.first);
+      while (!stop) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        for (auto node: nodes) {
+          if (node.second == nullptr && node.first->name() > host.name()) {
+            connect_node(node.first);
+          }
         }
       }
     });
