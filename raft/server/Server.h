@@ -167,6 +167,7 @@ class Server {
     close(connection->fd);
     connections.erase(connection);
     if (connection->node != nullptr) {
+      // todo avoid remove another
       nodes.erase(connection->node);
       spdlog::info("connection {}:{} removed, because of {}", connection->node->name(), purpose);
     } else {

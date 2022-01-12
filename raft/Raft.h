@@ -113,12 +113,14 @@ class Raft {
       std::unique_lock<std::mutex> lock(term_lock);
       term new_term = next_term();
       channel->broadcast_message(RequestVoteMessageHeader{new_term, 1});
-      role_condition.wait_for(lock, std::chrono::milliseconds(100));
+      auto timeout = role_condition.wait_for(lock, std::chrono::milliseconds(100));
       if (current_term_votes.size() > node_count / 2) {
         role_ = LEADER;
         return;
-      } else {
+      } else if (timeout == std::cv_status::no_timeout){
         spdlog::warn("term[{}]'s votes[{}] too less, request vote again", current_term, current_term_votes.size());
+      } else {
+        spdlog::warn("exit candidate, a leader exists");
       }
     }
   }
