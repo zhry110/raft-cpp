@@ -67,7 +67,7 @@ class Raft {
     current_term_votes.clear();
     voted_for_ = nullptr;
     role_ = FOLLOWER;
-    role_condition.notify_one();
+    role_condition.notify_all();
   }
   void vote_from(Node *node, term t) {
     std::lock_guard<std::mutex> lock(term_lock);
@@ -94,41 +94,48 @@ class Raft {
 #ifdef TEST_MODE
     follower_call_count++;
 #endif
-    spdlog::info("follower {}", self->name());
+    spdlog::info("follower {}, term {}", self->name(), current_term);
     while (!stop_) {
-      std::unique_lock<std::mutex> unique_lock(role_mutex_);
+      std::unique_lock<std::mutex> unique_lock(term_lock);
+      if (role_ != FOLLOWER) return;
       auto wait = leader_random_wait();
       auto status = role_condition.wait_for(unique_lock, wait);
       if (status == std::cv_status::timeout) {
         role_ = CANDIDATE;
+        spdlog::info("{} prepare for candidate, term {}", self->name(), current_term);
         return;
       }
       assert(role_ == FOLLOWER);
     }
   }
   void candidate() {
-    spdlog::info("candidate {}", self->name());
     while (!stop_) {
-      if (role_ != CANDIDATE) return;
       std::unique_lock<std::mutex> lock(term_lock);
+      if (role_ != CANDIDATE) return;
+      spdlog::info("candidate {}, term {}", self->name(), current_term);
       term new_term = next_term();
       channel->broadcast_message(RequestVoteMessageHeader{new_term, 1});
-      auto timeout = role_condition.wait_for(lock, std::chrono::milliseconds(100));
+      auto timeout = role_condition.wait_for(lock, std::chrono::milliseconds(150));
       if (current_term_votes.size() > node_count / 2) {
         role_ = LEADER;
+        spdlog::info("{} win leader, term {}", self->name(), current_term);
         return;
-      } else if (timeout == std::cv_status::no_timeout){
-        spdlog::warn("term[{}]'s votes[{}] too less, request vote again", current_term, current_term_votes.size());
+      } else if (timeout == std::cv_status::timeout) {
+        spdlog::warn("{} term[{}]'s votes[{}] too less, request vote again",
+                     self->name(),
+                     current_term,
+                     current_term_votes.size());
       } else {
-        spdlog::warn("exit candidate, a leader exists");
+        spdlog::warn("{} exit candidate, a leader exists, role {}", self->name(), role_);
+        assert(role_ != CANDIDATE);
       }
     }
   }
   void leader() {
-    spdlog::info("leader {}", self->name());
+    spdlog::info("leader {}, term {}", self->name(), current_term);
     while (!stop_ && role_ == LEADER) {
       channel->broadcast_message(AppendEntriesMessageHeader{current_term});
-      std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
   }
  public:
@@ -185,7 +192,7 @@ class Raft {
     if (header->t > current_term) {
       newer_term(header->t);
     }
-    role_condition.notify_one();
+    role_condition.notify_all();
   }
   Role role() { return role_; }
 };
